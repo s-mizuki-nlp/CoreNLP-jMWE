@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 
+import edu.stanford.nlp.ling.JMWETokenAnnotation;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
@@ -306,6 +307,36 @@ public class JMWEAnnotatorTest {
           assertThat(iToken.get(i).getForm(), is(equalTo(expected.get(i))));
       }
     }
-    
+
+
+    @Test
+    public void test_tokenMWEAnnotation() {
+        final String  text = "She looked up the world record.";
+        Properties props = new Properties();
+        props.setProperty("annotators", "tokenize, ssplit, pos, lemma, jmwe");
+        props.setProperty("customAnnotatorClass.jmwe", "edu.stanford.nlp.pipeline.JMWEAnnotator");
+        props.setProperty("customAnnotatorClass.jmwe.verbose", "true");
+        props.setProperty("customAnnotatorClass.jmwe.underscoreReplacement", "-");
+        props.setProperty("customAnnotatorClass.jmwe.indexData", index);
+        props.setProperty("customAnnotatorClass.jmwe.detector", "Consecutive");
+        Annotation doc = new Annotation(text);
+        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+        pipeline.annotate(doc);
+        List<CoreLabel> coreLabels = doc.get(TokensAnnotation.class);
+        Integer n_matches = 0;
+        for (CoreLabel token : coreLabels) {
+            if (token.word().equals("looked") || (token.word().equals("up"))) {
+                assertThat(token.get(JMWETokenAnnotation.class), is(equalTo("looked_up")));
+                n_matches += 1;
+            }
+            if ((token.word().equals("world")) || (token.word().equals("record"))) {
+                assertThat(token.get(JMWETokenAnnotation.class), is(equalTo("world_record")));
+                n_matches += 1;
+            }
+        }
+        assertThat(n_matches, is(equalTo(4)));
+
+
+    }
 
 }
