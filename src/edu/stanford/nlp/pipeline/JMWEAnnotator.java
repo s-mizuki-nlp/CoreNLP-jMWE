@@ -6,17 +6,16 @@ import edu.mit.jmwe.data.Token;
 import edu.mit.jmwe.detect.*;
 import edu.mit.jmwe.index.IMWEIndex;
 import edu.mit.jmwe.index.MWEIndex;
-import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.*;
 import edu.stanford.nlp.ling.CoreAnnotations.PartOfSpeechAnnotation;
-import edu.stanford.nlp.ling.CoreLabel;
-import edu.stanford.nlp.ling.JMWEAnnotation;
-import edu.stanford.nlp.ling.JMWETokenAnnotation;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.PropertiesUtils;
+import edu.stanford.nlp.ling.JMWETokenAnnotation;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Annotator to capture Multi-Word Expressions (MWE) via "jMWE", see
@@ -89,12 +88,13 @@ public class JMWEAnnotator implements Annotator {
             System.out.println("underscoreReplacement: " + this.underscoreSpaceReplacement);
             System.out.println("indexData: " + this.index);
             System.out.println("detectorName: " + this.detectorName);
+            System.out.println("repository: custom");
         }
     }
 
     @Override
     public void annotate(Annotation annotation) {
-        if (annotation.has(CoreAnnotations.SentencesAnnotation.class)) {
+        if (annotation.get(CoreAnnotations.SentencesAnnotation.class) != null) {
             // open index
             try {
                 index.open();
@@ -105,24 +105,26 @@ public class JMWEAnnotator implements Annotator {
             IMWEDetector detector = getDetector(index, detectorName);
             // capture jMWE per sentence
             for (CoreMap sentence : annotation.get(CoreAnnotations.SentencesAnnotation.class)) {
-                List<IMWE<IToken>> mwes = getjMWEInSentence(sentence, index, detector, verbose);
-                sentence.set(JMWEAnnotation.class, mwes);
+                List<IMWE<IToken>> lst_mwetokens = getjMWEInSentence(sentence, index, detector, verbose);
+                List<JMWETokenAnnotation> lst_jmwetokens = lst_mwetokens.stream().map(mwetoken -> new JMWETokenAnnotation(mwetoken)).collect(Collectors.toList());
 
                 List<CoreLabel> tokens = sentence.get(CoreAnnotations.TokensAnnotation.class);
-                Map<Integer, String> mweTokenMap = new HashMap<>();
-                for (IMWE<IToken> token : sentence.get(JMWEAnnotation.class)) {
-                    String[] mwe_tokens = token.getForm().split("_");
+                Map<Integer, JMWETokenAnnotation> mweTokenMap = new HashMap<>();
+                for (JMWETokenAnnotation jmwetoken : lst_jmwetokens) {
+                    // DEBUG
+//                    System.out.println(jmwetoken.toString());
+
                     int span_start = -1;
                     int m = 0;
                     for (int i = 0; i < tokens.size(); i++) {
-                        if (tokens.get(i).word().equals(mwe_tokens[m])) {
+                        if (tokens.get(i).word().equals(jmwetoken.get_surface_forms().get(m))) {
                             if (span_start < 0) {
                                 span_start = i;
                             }
                             m += 1;
-                            if (m >= mwe_tokens.length) {
+                            if (m >= jmwetoken.get_surface_forms().size()) {
                                 for (int j = span_start; j <= i; j++) {
-                                    mweTokenMap.put(j, token.getForm());
+                                    mweTokenMap.put(j, jmwetoken);
                                 }
                                 break;
                             }
@@ -132,25 +134,51 @@ public class JMWEAnnotator implements Annotator {
                         }
                     }
                 }
-                for (Map.Entry<Integer, String> entry : mweTokenMap.entrySet()) {
-                    tokens.get(entry.getKey()).set(JMWETokenAnnotation.class, entry.getValue());
+                // set multi-word expression information as the extended token attributes.
+                for (Map.Entry<Integer, JMWETokenAnnotation> entry : mweTokenMap.entrySet()) {
+                    int token_id = entry.getKey(); JMWETokenAnnotation jmwetoken = entry.getValue();
+                    // lemma -> truecaseText
+                    tokens.get(token_id).set(CoreAnnotations.TrueCaseTextAnnotation.class, jmwetoken.get_lemmatized_form());
+                    // part_of_speech -> truecase
+                    tokens.get(token_id).set(CoreAnnotations.TrueCaseAnnotation.class, jmwetoken.get_part_of_speech());
                 }
             }
             // close index
             index.close();
         } else {
-            throw new RuntimeException("unable to find words/tokens in: " + annotation);
+            throw new RuntimeException("the sentence annotation was null");
         }
     }
 
     @Override
-    public Set<Requirement> requirementsSatisfied() {
-        return Collections.singleton(NER_REQUIREMENT);
-    }
+    public Set<Class<? extends CoreAnnotation>> requirementsSatisfied() {
+        Set<Class<? extends CoreAnnotation>> ret = new HashSet<>();
+        ret.add(CoreAnnotations.TrueCaseTextAnnotation.class);
+        ret.add(CoreAnnotations.TrueCaseAnnotation.class);
+        return ret;
+      }
 
     @Override
-    public Set<Requirement> requires() {
-        return Annotator.REQUIREMENTS.get(STANFORD_NER);
+    /**
+     * Using the same requirements as the CoreNLP NERCombinerAnnotator
+     */
+    public Set<Class<? extends CoreAnnotation>> requires() {
+        return Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+                CoreAnnotations.TextAnnotation.class,
+                CoreAnnotations.TokensAnnotation.class,
+                CoreAnnotations.SentencesAnnotation.class,
+                CoreAnnotations.CharacterOffsetBeginAnnotation.class,
+                CoreAnnotations.CharacterOffsetEndAnnotation.class,
+                CoreAnnotations.PartOfSpeechAnnotation.class,
+                CoreAnnotations.LemmaAnnotation.class,
+                CoreAnnotations.BeforeAnnotation.class,
+                CoreAnnotations.AfterAnnotation.class,
+                CoreAnnotations.TokenBeginAnnotation.class,
+                CoreAnnotations.TokenEndAnnotation.class,
+                CoreAnnotations.IndexAnnotation.class,
+                CoreAnnotations.OriginalTextAnnotation.class,
+                CoreAnnotations.SentenceIndexAnnotation.class
+            )));
     }
 
     /**
