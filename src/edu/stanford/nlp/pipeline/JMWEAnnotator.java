@@ -120,37 +120,33 @@ public class JMWEAnnotator implements Annotator {
 
                 List<CoreLabel> tokens = sentence.get(CoreAnnotations.TokensAnnotation.class);
                 Map<Integer, JMWETokenAnnotation> mweTokenMap = new HashMap<>();
-                for (JMWETokenAnnotation jmwetoken : lst_jmwetokens) {
-                    // DEBUG
-//                    System.out.println(jmwetoken.toString());
+                int scanned_token_position = 0;
+                List<String> lst_surface_forms = tokens.stream().map(token -> token.word()).collect(Collectors.toList());
 
-                    int span_start = -1;
-                    int m = 0;
-                    for (int i = 0; i < tokens.size(); i++) {
-                        if (tokens.get(i).word().equals(jmwetoken.get_surface_forms().get(m))) {
-                            if (span_start < 0) {
-                                span_start = i;
-                            }
-                            m += 1;
-                            if (m >= jmwetoken.get_surface_forms().size()) {
-                                for (int j = span_start; j <= i; j++) {
-                                    mweTokenMap.put(j, jmwetoken);
-                                }
-                                break;
-                            }
-                        } else {
-                            m = 0;
-                            span_start = -1;
+                for (JMWETokenAnnotation jmwetoken : lst_jmwetokens) {
+                    int mwe_size = jmwetoken.get_surface_forms().size();
+
+                    for (int i = scanned_token_position; i < lst_surface_forms.size() - mwe_size + 1; i++) {
+                        if (lst_surface_forms.subList(i, i + mwe_size).equals(jmwetoken.get_surface_forms())) {
+                            scanned_token_position = i + mwe_size;
+                            mweTokenMap.put(i, jmwetoken);
+                            break;
                         }
                     }
                 }
                 // set multi-word expression information as the extended token attributes.
+//                JMWETokenAnnotation prev_mwe_token
                 for (Map.Entry<Integer, JMWETokenAnnotation> entry : mweTokenMap.entrySet()) {
                     int token_id = entry.getKey(); JMWETokenAnnotation jmwetoken = entry.getValue();
                     // lemma -> truecaseText
                     tokens.get(token_id).set(CoreAnnotations.TrueCaseTextAnnotation.class, jmwetoken.get_lemmatized_form());
                     // part_of_speech -> truecase
                     tokens.get(token_id).set(CoreAnnotations.TrueCaseAnnotation.class, jmwetoken.get_part_of_speech());
+                    // mwe token span
+                    int src = token_id;
+                    int tgt = src + jmwetoken.get_surface_forms().size();
+                    IntPair span = new IntPair(src, tgt);
+                    tokens.get(token_id).set(CoreAnnotations.SpanAnnotation.class, span);
                 }
             }
             // close index
@@ -165,6 +161,7 @@ public class JMWEAnnotator implements Annotator {
         Set<Class<? extends CoreAnnotation>> ret = new HashSet<>();
         ret.add(CoreAnnotations.TrueCaseTextAnnotation.class);
         ret.add(CoreAnnotations.TrueCaseAnnotation.class);
+        ret.add(CoreAnnotations.SpanAnnotation.class);
         return ret;
       }
 
