@@ -9,11 +9,19 @@ import edu.mit.jmwe.index.MWEIndex;
 import edu.stanford.nlp.ling.*;
 import edu.stanford.nlp.ling.CoreAnnotations.PartOfSpeechAnnotation;
 import edu.stanford.nlp.util.CoreMap;
+import edu.stanford.nlp.util.IntPair;
 import edu.stanford.nlp.util.PropertiesUtils;
 import edu.stanford.nlp.ling.JMWETokenAnnotation;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -56,7 +64,7 @@ public class JMWEAnnotator implements Annotator {
      * @param name  annotator name
      * @param props the properties
      */
-    public JMWEAnnotator(String name, Properties props) {
+    public JMWEAnnotator(String name, Properties props) throws URISyntaxException {
         // set verbosity
         this.verbose = PropertiesUtils.getBool(props, "customAnnotatorClass.jmwe.verbose", false);
         // set underscoreSpaceReplacement
@@ -71,7 +79,9 @@ public class JMWEAnnotator implements Annotator {
         if (!PropertiesUtils.hasProperty(props, "customAnnotatorClass.jmwe.indexData")) {
             throw new RuntimeException("No customAnnotatorClass.jmwe.indexData key in properties found");
         }
-        File indexFile = new File((String) props.get("customAnnotatorClass.jmwe.indexData"));
+        Object path_index_file = props.get("customAnnotatorClass.jmwe.indexData");
+        Path dir_jar = getApplicationPath(StanfordCoreNLP.class).getParent();
+        File indexFile = new File(dir_jar.toString(), (String) path_index_file);
         if (!indexFile.exists()) {
             throw new RuntimeException("index file " + indexFile.getAbsoluteFile() + " does not exist");
         }
@@ -267,5 +277,14 @@ public class JMWEAnnotator implements Annotator {
             sentence.add(new Token(token.originalText().replaceAll("_", underscoreSpaceReplacement).replaceAll(" ", underscoreSpaceReplacement), token.get(PartOfSpeechAnnotation.class), token.lemma().replaceAll("_", underscoreSpaceReplacement).replaceAll(" ", underscoreSpaceReplacement)));
         }
         return sentence;
+    }
+
+    public static Path getApplicationPath(Class<?> cls) throws URISyntaxException {
+        ProtectionDomain pd = cls.getProtectionDomain();
+        CodeSource cs = pd.getCodeSource();
+        URL location = cs.getLocation();
+        URI uri = location.toURI();
+        Path path = Paths.get(uri);
+        return path;
     }
 }
